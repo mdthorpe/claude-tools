@@ -101,6 +101,7 @@ program.command('chat')
     console.log(chalk.blue('🤖 Welcome to Claude Chat! Type /help for commands.\n'));
 
     let history: MessageCreateParams['messages'] = [];
+    let streamEnabled = false; // /stream on|off
 
     while (true) {
       const userInput = await input({ message: 'You:' });
@@ -118,9 +119,26 @@ program.command('chat')
       }
 
       if (trimmed === '/help') {
-        console.log(chalk.gray('Commands: /exit, /clear, /help, /model [id]'));
+        console.log(chalk.gray('Commands: /exit, /clear, /help, /model [id], /stream [on|off]'));
         console.log(chalk.gray(`Current model: ${config.model}`));
         continue;
+      }
+
+      if (trimmed.startsWith('/stream')) {
+        const parts = trimmed.split(/\s+/);
+        if (parts.length === 1) {
+          console.log(chalk.gray(`Streaming is ${streamEnabled ? 'on' : 'off'}. Use /stream on|off.`));
+          continue;
+        } else {
+          const arg = parts[1]?.toLowerCase();
+          if (arg === 'on' || arg === 'off') {
+            streamEnabled = arg === 'on';
+            console.log(chalk.gray(`Streaming ${streamEnabled ? 'enabled' : 'disabled'}.`));
+          } else {
+            console.log(chalk.red('Usage: /stream on|off'));
+          }
+          continue;
+        }
       }
 
       if (trimmed.startsWith('/model')) {
@@ -157,14 +175,29 @@ program.command('chat')
         continue;
       }
 
-      const { response, usage, updatedHistory } = await api.chat(history, trimmed);
-      history = updatedHistory;
+      if (streamEnabled) {
+        console.log(chalk.green('\nClaude:\n'));
+        const { usage, updatedHistory } = await api.chatStream(
+          history,
+          trimmed,
+          (delta) => process.stdout.write(delta)
+        );
+        history = updatedHistory;
 
-      console.log(chalk.green('\nClaude:\n'));
-      console.log(response);
-      console.log(chalk.gray('\n─────────────────────'));
-      console.log(chalk.gray(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`));
-      console.log();
+        console.log();
+        console.log(chalk.gray('\n─────────────────────'));
+        console.log(chalk.gray(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`));
+        console.log();
+      } else {
+        const { response, usage, updatedHistory } = await api.chat(history, trimmed);
+        history = updatedHistory;
+
+        console.log(chalk.green('\nClaude:\n'));
+        console.log(response);
+        console.log(chalk.gray('\n─────────────────────'));
+        console.log(chalk.gray(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`));
+        console.log();
+      }
     }
   });
 

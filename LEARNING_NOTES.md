@@ -267,6 +267,78 @@ if (ALLOWED_MODELS.includes(newModel as ModelId)) {
 - `/model [id]` — list models or switch model
 - Each reply prints token usage (input/output)
 
+### Streaming replies
+
+**Concept**: Instead of waiting for the full message, receive text chunks (deltas) as they are generated. Print them immediately for low‑latency UX, then read final metadata (like token usage) when the stream completes.
+
+**Client helper shape**:
+```typescript
+async chatStream(
+  history: MessageCreateParams['messages'],
+  newPrompt: string,
+  onText: (delta: string) => void
+): Promise<{
+  content: string;
+  usage: { inputTokens: number; outputTokens: number };
+  updatedHistory: MessageCreateParams['messages'];
+}> {
+  const updatedHistory = [
+    ...history,
+    { role: 'user', content: newPrompt } as const,
+  ];
+
+  const stream = await client.messages.stream({
+    model,
+    max_tokens,
+    messages: updatedHistory,
+  });
+
+  let full = '';
+  stream.on('text', (delta) => {
+    onText(delta);
+    full += delta;
+  });
+
+  const message = await stream.finalMessage();
+
+  updatedHistory.push({ role: 'assistant', content: full } as const);
+  return {
+    content: full,
+    usage: {
+      inputTokens: message.usage.input_tokens,
+      outputTokens: message.usage.output_tokens,
+    },
+    updatedHistory,
+  };
+}
+```
+
+**Chat loop toggle**:
+```typescript
+let streamEnabled = false; // /stream on|off
+
+if (streamEnabled) {
+  const { usage, updatedHistory } = await api.chatStream(
+    history,
+    userText,
+    (delta) => process.stdout.write(delta)
+  );
+  history = updatedHistory;
+  console.log();
+  console.log(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`);
+} else {
+  const { response, usage, updatedHistory } = await api.chat(history, userText);
+  history = updatedHistory;
+  console.log(response);
+  console.log(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`);
+}
+```
+
+**Notes**:
+- `onText` is a callback invoked for each delta; use `process.stdout.write` to render live.
+- Only append the assistant message to history after the stream completes (keeps context clean).
+- You can expose `/stream on|off` to toggle streaming interactively.
+
 ## Global CLI Setup with Bun
 
 1. **Set shebang to bun**: `#!/usr/bin/env bun`
