@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { Message, TextBlock } from '@anthropic-ai/sdk/resources/messages';
+import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages';
 import { type Config, type ClaudeResponse, type ApiError, type ModelsListResponse } from '../types';
 import chalk from 'chalk';
 
@@ -28,7 +30,7 @@ export class ClaudeAPI {
 
       // Extract text content from the response
       const content = message.content
-        .filter(block => block.type === 'text')
+        .filter((block): block is TextBlock => block.type === 'text')
         .map(block => block.text)
         .join('\n');
 
@@ -38,6 +40,95 @@ export class ClaudeAPI {
           inputTokens: message.usage.input_tokens,
           outputTokens: message.usage.output_tokens,
         },
+      };
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async chat(
+    history: MessageCreateParams['messages'],
+    newPrompt: string
+  ): Promise<{
+    response: string;
+    usage: { inputTokens: number; outputTokens: number };
+    updatedHistory: MessageCreateParams['messages'];
+  }> {
+    // Append the new user message to history
+    const updatedHistory: MessageCreateParams['messages'] = [
+      ...history,
+      { role: 'user', content: newPrompt } as const,
+    ];
+
+    try {
+      const message: Message = await this.client.messages.create({
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        messages: updatedHistory,
+      });
+
+      // Extract text content
+      const content = message.content
+        .filter((block): block is TextBlock => block.type === 'text')
+        .map(block => block.text)
+        .join('\n');
+
+      const usage = {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
+      };
+
+      // Append assistant's response to history
+      updatedHistory.push({ role: 'assistant', content: content } as const);
+
+      return {
+        response: content,
+        usage,
+        updatedHistory,
+      };
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  async chatStream(
+    history: MessageCreateParams['messages'],
+    newPrompt: string,
+    onText: (delta: string) => void
+  ): Promise<{
+    content: string;
+    usage: { inputTokens: number; outputTokens: number };
+    updatedHistory: MessageCreateParams['messages'];
+  }> {
+    const updatedHistory: MessageCreateParams['messages'] = [
+      ...history,
+      { role: 'user', content: newPrompt } as const,
+    ];
+
+    try {
+      const stream = await this.client.messages.stream({
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        messages: updatedHistory,
+      });
+
+      let full = '';
+      stream.on('text', (delta: string) => {
+        onText(delta);
+        full += delta;
+      });
+
+      const message: Message = await stream.finalMessage();
+
+      updatedHistory.push({ role: 'assistant', content: full } as const);
+
+      return {
+        content: full,
+        usage: {
+          inputTokens: message.usage.input_tokens,
+          outputTokens: message.usage.output_tokens,
+        },
+        updatedHistory,
       };
     } catch (error) {
       this.handleError(error);

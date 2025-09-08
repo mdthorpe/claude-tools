@@ -4,6 +4,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { loadConfig } from './lib/config';
 import { ClaudeAPI } from './lib/api';
+import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages';
+import { ALLOWED_MODELS, type ModelId } from './types';
 
 const program = new Command();
 
@@ -85,6 +87,84 @@ program
     } catch (error) {
       console.error(chalk.red('Error:'), error);
       process.exit(1);
+    }
+  });
+
+program.command('chat')
+  .description('Chat with Claude')
+  .action(async () => {
+    const { input } = await import('@inquirer/prompts');
+
+    const config = loadConfig();
+    let api = new ClaudeAPI(config);
+
+    console.log(chalk.blue('🤖 Welcome to Claude Chat! Type /help for commands.\n'));
+
+    let history: MessageCreateParams['messages'] = [];
+
+    while (true) {
+      const userInput = await input({ message: 'You:' });
+      const trimmed = userInput.trim();
+
+      if (trimmed === '/exit') {
+        console.log(chalk.blue('👋 Chat ended.'));
+        break;
+      }
+
+      if (trimmed === '/clear') {
+        history = [];
+        console.log(chalk.gray('History cleared.\n'));
+        continue;
+      }
+
+      if (trimmed === '/help') {
+        console.log(chalk.gray('Commands: /exit, /clear, /help, /model [id]'));
+        console.log(chalk.gray(`Current model: ${config.model}`));
+        continue;
+      }
+
+      if (trimmed.startsWith('/model')) {
+        const parts = trimmed.split(/\s+/);
+        if (parts.length === 1) {
+          console.log(chalk.blue('📋 Fetching available models...\n'));
+          const response = await api.listModels();
+          console.log(chalk.green('Available Claude Models:\n'));
+          response.data.forEach((model, index) => {
+            console.log(chalk.cyan(`${index + 1}. ${model.display_name}`));
+            console.log(chalk.gray(`   ID: ${model.id}`));
+            console.log(chalk.gray(`   Released: ${new Date(model.created_at).toLocaleDateString()}\n`));
+          });
+          if (response.has_more) {
+            console.log(chalk.yellow('Note: More models are available. This shows the most recent ones.'));
+          }
+          console.log(chalk.gray(`Current model: ${config.model}\n`));
+          continue;
+        } else {
+          const newModel = parts[1];
+          if (ALLOWED_MODELS.includes(newModel as ModelId)) {
+            config.model = newModel as ModelId;
+            api = new ClaudeAPI(config);
+            console.log(chalk.gray(`Model set to: ${config.model}\n`));
+          } else {
+            console.log(chalk.red('Unknown model id.'));
+            console.log(chalk.gray('Type /model to list available models.'));
+          }
+          continue;
+        }
+      }
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const { response, usage, updatedHistory } = await api.chat(history, trimmed);
+      history = updatedHistory;
+
+      console.log(chalk.green('\nClaude:\n'));
+      console.log(response);
+      console.log(chalk.gray('\n─────────────────────'));
+      console.log(chalk.gray(`Tokens used: ${usage.inputTokens} input, ${usage.outputTokens} output`));
+      console.log();
     }
   });
 

@@ -174,6 +174,99 @@ export interface ModelsListResponse {
 - Use `before_id` to get previous page
 - Check `has_more` to know if more pages exist
 
+## Interactive Chat Mode
+
+### Using @inquirer/prompts for interactive input
+```typescript
+const { input } = await import('@inquirer/prompts');
+
+while (true) {
+  const text = (await input({ message: 'You:' })).trim();
+  if (text === '/exit') break;
+  if (text === '/clear') { history = []; continue; }
+  if (text === '/help') { /* print commands */ continue; }
+  // send to Claude...
+}
+```
+
+### Conversation history with Anthropic SDK types
+```typescript
+import type { MessageCreateParams, Message, TextBlock } from '@anthropic-ai/sdk/resources/messages';
+
+let history: MessageCreateParams['messages'] = [];
+
+const message: Message = await client.messages.create({
+  model,
+  max_tokens,
+  messages: history,
+});
+```
+
+### Extracting text blocks with a type guard
+```typescript
+const content = message.content
+  .filter((block): block is TextBlock => block.type === 'text')
+  .map(block => block.text)
+  .join('\n');
+```
+
+### Returning token usage from the API client
+```typescript
+async function chat(...): Promise<{
+  response: string;
+  usage: { inputTokens: number; outputTokens: number };
+  updatedHistory: MessageCreateParams['messages'];
+}> {
+  // call SDK
+  const usage = {
+    inputTokens: message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens,
+  };
+  return { response: content, usage, updatedHistory };
+}
+```
+
+### Centralized allowed models (single source of truth)
+```typescript
+// src/types/index.ts
+export const ALLOWED_MODELS = [
+  'claude-opus-4-1-20250805',
+  'claude-opus-4-20250514',
+  'claude-3-7-sonnet-latest',
+] as const;
+export type ModelId = typeof ALLOWED_MODELS[number];
+
+export const ConfigSchema = z.object({
+  apiKey: z.string().min(1, 'API key is required'),
+  model: z.enum(ALLOWED_MODELS).default('claude-opus-4-20250514'),
+  maxTokens: z.number().positive().default(1000),
+});
+```
+
+Validate `/model <id>` using the constant:
+```typescript
+import { ALLOWED_MODELS, type ModelId } from './types';
+if (ALLOWED_MODELS.includes(newModel as ModelId)) {
+  config.model = newModel as ModelId;
+}
+```
+
+### Importing SDK types (how to find them)
+- Types are exported from `@anthropic-ai/sdk/resources/messages`.
+- In editor: hover or Cmd/Ctrl-click a symbol to jump to its `.d.ts`.
+- Check the package `exports` field for valid subpaths.
+
+### let vs const for the API instance
+- Reassigning the variable (e.g., after `/model`) requires `let`.
+- Alternatively, keep `const api = new ClaudeAPI(config)` and only mutate `config.model` — current client reads from `config` each call.
+
+### Chat commands implemented
+- `/exit` — quit
+- `/clear` — clear history
+- `/help` — show commands and current model
+- `/model [id]` — list models or switch model
+- Each reply prints token usage (input/output)
+
 ## Global CLI Setup with Bun
 
 1. **Set shebang to bun**: `#!/usr/bin/env bun`
