@@ -9,6 +9,9 @@ A command-line interface for interacting with Claude AI models, built with TypeS
 - **Configurable settings** via environment variables
 - **Token usage tracking** to monitor API costs
 - **Multiple model support** including Claude Opus and Sonnet
+ - **Interactive chat mode** with conversation history
+ - **Streaming replies** (toggle with `/stream on|off`)
+ - **Model switching in chat** via `/model [id]`
 
 ## Installation
 
@@ -26,9 +29,10 @@ bun run build
 
 ## Setup
 
-1. Create a `.env` file in the project root:
+1. Create your `.env` from the example and edit values:
 ```bash
-ANTHROPIC_API_KEY=your_api_key_here
+cp .env.example .env
+# edit .env
 ```
 
 2. Make the CLI globally available:
@@ -53,13 +57,28 @@ claude models
 claude ask "Explain quantum computing" --model claude-3-7-sonnet-latest --tokens 500
 ```
 
+### Interactive chat
+```bash
+claude chat
+# Commands in chat:
+# /help                Show commands and current model
+# /clear               Clear conversation history
+# /exit                Quit chat
+# /model [id]          List models (no arg) or switch model
+# /stream [on|off]     Toggle streaming replies
+```
+
+### Streaming
+- Toggle streaming on/off inside chat using `/stream on|off`.
+- While streaming, text appears as it’s generated; when complete, token usage is printed.
+
 ## Configuration
 
 The CLI supports configuration via environment variables:
 
 - `ANTHROPIC_API_KEY` - Your Anthropic API key (required)
 - `CLAUDE_MODEL` - Default model to use (optional)
-- `CLAUDE_MAX_TOKENS` - Default max tokens (optional)
+- `MAX_TOKENS` - Default max tokens (optional)
 
 ## Development
 
